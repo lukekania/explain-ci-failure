@@ -3,6 +3,13 @@ const github = require("@actions/github");
 const fs = require("fs");
 const AdmZip = require("adm-zip");
 
+function toBool(s, def) {
+  if (s === undefined || s === null || s === "") return def;
+  return /^(true|yes|1|on)$/i.test(String(s).trim());
+}
+
+const CI_FAILURE_MARKER = "<!-- ci-failure-explainer:v0 -->";
+
 // -------------------- Output helpers --------------------
 
 function appendStepSummary(markdown) {
@@ -284,14 +291,65 @@ function findFirstErrorAcrossTexts(textFiles) {
   return null;
 }
 
+// -------------------- PR comment --------------------
+
+async function getRunContext(octokit) {
+  const ctx = github.context;
+
+  if (ctx.payload?.workflow_run?.id) {
+    const runId = ctx.payload.workflow_run.id;
+    const { owner, repo } = ctx.repo;
+    let prs = [];
+    try {
+      const prResp = await octokit.rest.actions.listPullRequestsAssociatedWithWorkflowRun({
+        owner, repo, run_id: runId
+      });
+      prs = (prResp.data || []).map((p) => p.number);
+    } catch {
+      prs = [];
+    }
+    return { owner, repo, runId, prNumbers: prs };
+  }
+
+  return {
+    owner: ctx.repo.owner,
+    repo: ctx.repo.repo,
+    runId: ctx.runId,
+    prNumbers: ctx.payload?.pull_request ? [ctx.payload.pull_request.number] : []
+  };
+}
+
+async function upsertComment(octokit, { owner, repo, issue_number, body }) {
+  const comments = await octokit.rest.issues.listComments({
+    owner, repo, issue_number, per_page: 100
+  });
+
+  const existing = comments.data.find((c) => (c.body || "").includes(CI_FAILURE_MARKER));
+  if (existing) {
+    await octokit.rest.issues.updateComment({
+      owner, repo, comment_id: existing.id, body
+    });
+    return { updated: true, url: existing.html_url };
+  }
+
+  const created = await octokit.rest.issues.createComment({
+    owner, repo, issue_number, body
+  });
+  return { updated: false, url: created.data.html_url };
+}
+
 // -------------------- Main --------------------
 
 async function run() {
   try {
     const token = core.getInput("github_token", { required: true });
+    const commentOnPR = toBool(core.getInput("comment_on_pr"), false);
+    const jsonOutput = toBool(core.getInput("json_output"), false);
+
     const octokit = github.getOctokit(token);
-    const { owner, repo } = github.context.repo;
-    const runId = github.context.runId;
+    const { owner, repo, runId, prNumbers } = await getRunContext(octokit);
+    const summaryParts = [];
+    const jsonResults = [];
 
     core.info(`CI Explainer: analyzing ${owner}/${repo} run_id=${runId}`);
 
@@ -310,11 +368,13 @@ async function run() {
     }
 
     appendStepSummary("### CI Explainer\n");
+    summaryParts.push("### CI Explainer\n");
 
     for (const job of failedJobs.slice(0, 5)) {
       appendStepSummary(`#### Failed job: ${job.name}\n`);
       appendStepSummary(`- Conclusion: **${job.conclusion}**\n`);
       appendStepSummary(`- URL: ${job.html_url}\n`);
+      summaryParts.push(`#### Failed job: ${job.name}\n`);
 
       let payload;
       try {
@@ -322,7 +382,7 @@ async function run() {
       } catch (e) {
         const msg = e?.message || String(e);
         core.warning(`Could not download logs: ${msg}`);
-        appendStepSummary(`- ⚠️ Could not download logs: ${msg}\n\n`);
+        appendStepSummary(`- Could not download logs: ${msg}\n\n`);
         continue;
       }
 
@@ -354,10 +414,39 @@ async function run() {
       if (secondaryHint) appendStepSummary(`- Also check: ${secondaryHint}\n`);
       appendStepSummary(`- Context:${codeBlock(excerpt)}\n`);
 
+      summaryParts.push(
+        `- Failing step: **${hit.stepName}**\n` +
+        `- Detected type: **${hit.rule}**\n` +
+        `- First error:${codeBlock(normalized)}\n` +
+        `- Likely fix: ${primaryHint}\n`
+      );
+
+      if (jsonOutput) {
+        jsonResults.push({
+          job: job.name,
+          step: hit.stepName,
+          errorType: hit.rule,
+          error: normalized,
+          hint: primaryHint,
+          context: excerpt
+        });
+      }
+
       core.info(`CI Explainer: ${job.name} -> step="${hit.stepName}" rule="${hit.rule}" line="${normalized}"`);
     }
 
-    appendStepSummary("> Next improvement: add repo-specific rule packs (eslint/jest/vite/tsc) and tune false positives.\n");
+    if (commentOnPR && prNumbers.length > 0) {
+      const body = `${CI_FAILURE_MARKER}\n` + summaryParts.join("\n");
+      for (const prNumber of prNumbers.slice(0, 3)) {
+        const c = await upsertComment(octokit, { owner, repo, issue_number: prNumber, body });
+        core.info(`PR #${prNumber} comment ${c.updated ? "updated" : "created"}: ${c.url}`);
+      }
+    }
+
+    if (jsonOutput) {
+      core.setOutput("failures_json", JSON.stringify(jsonResults));
+      core.info(`Exported ${jsonResults.length} failure(s) as JSON.`);
+    }
   } catch (err) {
     core.setFailed(err?.message || String(err));
   }

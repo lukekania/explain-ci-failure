@@ -4,6 +4,17 @@ inputs:
   github_token:
     description: "GITHUB_TOKEN"
     required: true
+  comment_on_pr:
+    description: "Post failure summary as a PR comment"
+    required: false
+    default: "false"
+  json_output:
+    description: "Export failures as JSON via the failures_json output"
+    required: false
+    default: "false"
+outputs:
+  failures_json:
+    description: "JSON array of failure details (when json_output is enabled)"
 runs:
   using: "node20"
   main: "dist/index.js"

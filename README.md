@@ -32,7 +32,6 @@ For failed workflow runs, the action:
 
 There is:
 - no blocking behavior
-- no PR comments (yet)
 - no configuration required
 
 ## Example Output
@@ -101,13 +100,12 @@ If no rule matches, the action falls back to a generic error detector.
 ## Known Limitations
 
 - Step detection is log-based and best effort
-- No PR comments (summary-only)
+- PR comments are opt-in via `comment_on_pr`
 - No merge blocking
 - No deep root-cause analysis
 
 ## Possible Future Features
 
-- PR comments with failure summaries
 - Repository-specific rule packs
 - Flaky test detection across runs
 - Failure deduplication (seen before)
@@ -115,7 +113,6 @@ If no rule matches, the action falls back to a generic error detector.
 - Reviewer suggestions based on failing files
 - Deploy-risk correlation
 - Time-to-fix metrics per error type
-- JSON output mode for downstream tooling
 - Support for additional stacks (Python, Go, Java)
 
 ## Why This Exists
