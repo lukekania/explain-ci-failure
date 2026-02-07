@@ -481,6 +481,49 @@ async function detectFlaky(octokit, { owner, repo, workflowId, jobName, lookback
   return { isFlaky, passes, failures, total: passes + failures };
 }
 
+// -------------------- Time-to-fix metrics --------------------
+
+async function computeTimeToFix(octokit, { owner, repo, label }) {
+  // Find closed pattern issues and compute median time from first occurrence to close
+  const q = `repo:${owner}/${repo} is:issue is:closed label:${label}`;
+  const result = await octokit.rest.search.issuesAndPullRequests({ q, per_page: 50 });
+
+  const fixTimes = {};
+
+  for (const item of result.data.items) {
+    const closedAt = new Date(item.closed_at);
+
+    // Infer error type from title: [CI Pattern hash] TypeScript: ...
+    const typeMatch = item.title.match(/\]\s*(\w[\w/]*?):/);
+    const errorType = typeMatch ? typeMatch[1] : "Generic";
+
+    const createdAt = new Date(item.created_at);
+    const hours = Math.round((closedAt - createdAt) / 3600000);
+
+    if (!fixTimes[errorType]) fixTimes[errorType] = [];
+    fixTimes[errorType].push(hours);
+  }
+
+  // Compute median for each type
+  const medians = {};
+  for (const [type, times] of Object.entries(fixTimes)) {
+    times.sort((a, b) => a - b);
+    const mid = Math.floor(times.length / 2);
+    medians[type] = times.length % 2 === 0
+      ? Math.round((times[mid - 1] + times[mid]) / 2)
+      : times[mid];
+  }
+
+  return medians;
+}
+
+function formatFixTime(hours) {
+  if (hours < 1) return "<1h";
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  return `${days}d`;
+}
+
 // -------------------- Reviewer suggestions --------------------
 
 function extractFilePaths(errorLine, excerpt) {
@@ -611,6 +654,15 @@ async function run() {
       return;
     }
 
+    let fixTimeMedians = {};
+    if (checkPatterns) {
+      try {
+        fixTimeMedians = await computeTimeToFix(octokit, { owner, repo, label: patternLabel });
+      } catch {
+        // time-to-fix is best-effort
+      }
+    }
+
     appendStepSummary("### CI Explainer\n");
     summaryParts.push("### CI Explainer\n");
 
@@ -654,6 +706,9 @@ async function run() {
       appendStepSummary(`- Detected type: **${hit.rule}**\n`);
       if (showDeployRisk) {
         appendStepSummary(`- Deploy risk: **${getDeployRisk(hit.rule)}**\n`);
+      }
+      if (fixTimeMedians[hit.rule] !== undefined) {
+        appendStepSummary(`- Typical fix time: **${formatFixTime(fixTimeMedians[hit.rule])}**\n`);
       }
       appendStepSummary(`- Source log: \`${hit.fileName}\`\n`);
       appendStepSummary(`- First error (normalized):${codeBlock(normalized)}\n`);
@@ -713,10 +768,14 @@ async function run() {
       appendStepSummary(`- Context:${codeBlock(excerpt)}\n`);
 
       const riskLine = showDeployRisk ? `- Deploy risk: **${getDeployRisk(hit.rule)}**\n` : "";
+      const fixTimeLine = fixTimeMedians[hit.rule] !== undefined
+        ? `- Typical fix time: **${formatFixTime(fixTimeMedians[hit.rule])}**\n`
+        : "";
       let partBlock =
         `- Failing step: **${hit.stepName}**\n` +
         `- Detected type: **${hit.rule}**\n` +
         riskLine +
+        fixTimeLine +
         `- First error:${codeBlock(normalized)}\n` +
         `- Likely fix: ${primaryHint}\n`;
       if (patternLink) {

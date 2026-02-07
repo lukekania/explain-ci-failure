@@ -107,10 +107,6 @@ If no rule matches, the action falls back to a generic error detector.
 - No merge blocking
 - No deep root-cause analysis
 
-## Possible Future Features
-
-- Time-to-fix metrics per error type
-
 ## Why This Exists
 
 Most CI failures are boring, repetitive, and predictable.
