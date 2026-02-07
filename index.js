@@ -124,9 +124,23 @@ function findStepForLineIndex(stepStarts, lineIndex) {
   return stepStarts[Math.max(0, hi)].name;
 }
 
-function pickFirstMeaningfulError(lines) {
-  // More precise Node/TS/Frontend CI rules first (less false positives)
+function parseCustomRules(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((r) => r.name && r.pattern)
+      .map((r) => ({ name: r.name, re: new RegExp(r.pattern, "i"), hint: r.hint || "" }));
+  } catch {
+    return [];
+  }
+}
+
+function pickFirstMeaningfulError(lines, customRules = []) {
+  // Custom rules take priority
   const rules = [
+    ...customRules.map((r) => ({ name: r.name, re: r.re })),
     // ESLint: common formats
     { name: "ESLint", re: /^\s*\d+:\d+\s+(error|warning)\s+.+\s+.+$/i }, // classic table output
     { name: "ESLint", re: /\bESLint\b.*(found|problems?)/i },
@@ -220,7 +234,10 @@ function pickFirstMeaningfulError(lines) {
   return null;
 }
 
-function hintFor(ruleName) {
+function hintFor(ruleName, customRules = []) {
+  const custom = customRules.find((r) => r.name === ruleName);
+  if (custom && custom.hint) return [custom.hint, ""];
+
   const hints = {
     ESLint: [
       "Run the linter locally and apply the suggested fix (often `npm run lint -- --fix` depending on your script).",
@@ -370,19 +387,19 @@ function extractTextFilesFromZip(zipBuf, { maxFiles = 80, maxTotalBytes = 12 * 1
   return out;
 }
 
-function findFirstErrorInText({ text, fileName }) {
+function findFirstErrorInText({ text, fileName, customRules }) {
   const lines = text.split(/\r?\n/);
   const stepStarts = buildStepIndex(lines);
-  const hit = pickFirstMeaningfulError(lines);
+  const hit = pickFirstMeaningfulError(lines, customRules);
   if (!hit) return null;
 
   const stepName = findStepForLineIndex(stepStarts, hit.lineIndex);
   return { ...hit, stepName, fileName };
 }
 
-function findFirstErrorAcrossTexts(textFiles) {
+function findFirstErrorAcrossTexts(textFiles, customRules) {
   for (const f of textFiles) {
-    const hit = findFirstErrorInText({ text: f.text, fileName: f.name });
+    const hit = findFirstErrorInText({ text: f.text, fileName: f.name, customRules });
     if (hit) return hit;
   }
   return null;
@@ -460,6 +477,7 @@ async function run() {
     const checkPatterns = toBool(core.getInput("check_patterns"), false);
     const patternLabel = core.getInput("pattern_label") || "ci-failure-pattern";
     const runbookUrl = (core.getInput("runbook_url") || "").replace(/\/+$/, "");
+    const customRules = parseCustomRules(core.getInput("custom_rules"));
 
     const octokit = github.getOctokit(token);
     const { owner, repo, runId, prNumbers } = await getRunContext(octokit);
@@ -506,10 +524,10 @@ async function run() {
       if (payload.kind === "zip") {
         core.info(`CI Explainer: job ${job.id} logs=zip (${payload.contentType || "?"})`);
         const textFiles = extractTextFilesFromZip(payload.zipBuf);
-        hit = findFirstErrorAcrossTexts(textFiles);
+        hit = findFirstErrorAcrossTexts(textFiles, customRules);
       } else {
         core.info(`CI Explainer: job ${job.id} logs=text (${payload.contentType || "?"})`);
-        hit = findFirstErrorInText({ text: payload.text, fileName: `job-${job.id}.log` });
+        hit = findFirstErrorInText({ text: payload.text, fileName: `job-${job.id}.log`, customRules });
       }
 
       if (!hit) {
@@ -518,7 +536,7 @@ async function run() {
       }
 
       const normalized = normalize(hit.line);
-      const [primaryHint, secondaryHint] = hintFor(hit.rule);
+      const [primaryHint, secondaryHint] = hintFor(hit.rule, customRules);
       const excerpt = (hit.excerpt || []).slice(0, 16).map(normalize).join("\n");
 
       appendStepSummary(`- Failing step: **${hit.stepName}**\n`);

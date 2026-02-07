@@ -24,6 +24,10 @@ inputs:
     description: "Base URL for runbook links (e.g., https://wiki.example.com/runbooks)"
     required: false
     default: ""
+  custom_rules:
+    description: "JSON array of custom rules: [{\"name\": \"MyLinter\", \"pattern\": \"my-lint-error\", \"hint\": \"Run my-lint --fix\"}]"
+    required: false
+    default: ""
 outputs:
   failures_json:
     description: "JSON array of failure details (when json_output is enabled)"
