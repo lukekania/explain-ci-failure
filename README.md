@@ -110,8 +110,6 @@ If no rule matches, the action falls back to a generic error detector.
 
 - Repository-specific rule packs
 - Flaky test detection across runs
-- Failure deduplication (seen before)
-- Auto-linking errors to docs or runbooks
 - Reviewer suggestions based on failing files
 - Deploy-risk correlation
 - Time-to-fix metrics per error type

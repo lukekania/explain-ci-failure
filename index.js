@@ -1,5 +1,6 @@
 const core = require("@actions/core");
 const github = require("@actions/github");
+const crypto = require("crypto");
 const fs = require("fs");
 const AdmZip = require("adm-zip");
 
@@ -9,6 +10,22 @@ function toBool(s, def) {
 }
 
 const CI_FAILURE_MARKER = "<!-- ci-failure-explainer:v0 -->";
+
+const RUNBOOK_SLUGS = {
+  ESLint: "eslint",
+  TypeScript: "typescript",
+  npm: "npm",
+  "Jest/Vitest": "jest",
+  Build: "build",
+  Docker: "docker",
+  Node: "node",
+  pytest: "pytest",
+  mypy: "mypy",
+  "ruff/flake8": "ruff",
+  pip: "pip",
+  Go: "go",
+  Generic: "generic"
+};
 
 // -------------------- Output helpers --------------------
 
@@ -334,6 +351,21 @@ function findFirstErrorAcrossTexts(textFiles) {
   return null;
 }
 
+// -------------------- Deduplication --------------------
+
+function sha1(s) {
+  return crypto.createHash("sha1").update(String(s)).digest("hex");
+}
+
+async function findPatternIssue(octokit, { owner, repo, hash, label }) {
+  const q = `repo:${owner}/${repo} is:issue in:title "${hash}" label:${label}`;
+  const found = await octokit.rest.search.issuesAndPullRequests({ q, per_page: 5 });
+  if (found.data.items.length > 0) {
+    return found.data.items[0].html_url;
+  }
+  return null;
+}
+
 // -------------------- PR comment --------------------
 
 async function getRunContext(octokit) {
@@ -388,6 +420,9 @@ async function run() {
     const token = core.getInput("github_token", { required: true });
     const commentOnPR = toBool(core.getInput("comment_on_pr"), false);
     const jsonOutput = toBool(core.getInput("json_output"), false);
+    const checkPatterns = toBool(core.getInput("check_patterns"), false);
+    const patternLabel = core.getInput("pattern_label") || "ci-failure-pattern";
+    const runbookUrl = (core.getInput("runbook_url") || "").replace(/\/+$/, "");
 
     const octokit = github.getOctokit(token);
     const { owner, repo, runId, prNumbers } = await getRunContext(octokit);
@@ -455,14 +490,37 @@ async function run() {
       appendStepSummary(`- First error (normalized):${codeBlock(normalized)}\n`);
       appendStepSummary(`- Likely fix: ${primaryHint}\n`);
       if (secondaryHint) appendStepSummary(`- Also check: ${secondaryHint}\n`);
+
+      if (runbookUrl) {
+        const runbookSlug = RUNBOOK_SLUGS[hit.rule] || hit.rule.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        appendStepSummary(`- [Runbook](${runbookUrl}/${runbookSlug})\n`);
+      }
+
+      let patternLink = null;
+      if (checkPatterns) {
+        const signature = `${hit.rule}: ${normalized}`;
+        const hash = sha1(signature).slice(0, 8);
+        patternLink = await findPatternIssue(octokit, { owner, repo, hash, label: patternLabel });
+        if (patternLink) {
+          appendStepSummary(`- Seen before — tracking issue: ${patternLink}\n`);
+        }
+      }
+
       appendStepSummary(`- Context:${codeBlock(excerpt)}\n`);
 
-      summaryParts.push(
+      let partBlock =
         `- Failing step: **${hit.stepName}**\n` +
         `- Detected type: **${hit.rule}**\n` +
         `- First error:${codeBlock(normalized)}\n` +
-        `- Likely fix: ${primaryHint}\n`
-      );
+        `- Likely fix: ${primaryHint}\n`;
+      if (patternLink) {
+        partBlock += `- Seen before — tracking issue: ${patternLink}\n`;
+      }
+      if (runbookUrl) {
+        const slug = RUNBOOK_SLUGS[hit.rule] || hit.rule.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        partBlock += `- [Runbook](${runbookUrl}/${slug})\n`;
+      }
+      summaryParts.push(partBlock);
 
       if (jsonOutput) {
         jsonResults.push({

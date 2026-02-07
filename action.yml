@@ -12,6 +12,18 @@ inputs:
     description: "Export failures as JSON via the failures_json output"
     required: false
     default: "false"
+  check_patterns:
+    description: "Check if errors match known failure patterns tracked in GitHub Issues"
+    required: false
+    default: "false"
+  pattern_label:
+    description: "Label used to find pattern-tracking issues"
+    required: false
+    default: "ci-failure-pattern"
+  runbook_url:
+    description: "Base URL for runbook links (e.g., https://wiki.example.com/runbooks)"
+    required: false
+    default: ""
 outputs:
   failures_json:
     description: "JSON array of failure details (when json_output is enabled)"
