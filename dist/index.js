@@ -36440,6 +36440,32 @@ function hintFor(ruleName, customRules = []) {
   return hints[ruleName] || hints.Generic;
 }
 
+// -------------------- Deploy risk --------------------
+
+const DEPLOY_RISK = {
+  Docker: "high",
+  Build: "high",
+  npm: "high",
+  Maven: "high",
+  Gradle: "high",
+  TypeScript: "medium",
+  "Jest/Vitest": "medium",
+  JUnit: "medium",
+  pytest: "medium",
+  Go: "medium",
+  Java: "medium",
+  Node: "medium",
+  ESLint: "low",
+  "ruff/flake8": "low",
+  mypy: "low",
+  pip: "medium",
+  Generic: "medium"
+};
+
+function getDeployRisk(ruleName) {
+  return DEPLOY_RISK[ruleName] || "medium";
+}
+
 // -------------------- Logs download + parsing --------------------
 
 function bufferFromOctokitData(data) {
@@ -36691,6 +36717,7 @@ async function run() {
     const flakyDetection = toBool(core.getInput("flaky_detection"), false);
     const flakyLookback = clampInt(core.getInput("flaky_lookback"), 10, 3, 30);
     const suggestReviewers = toBool(core.getInput("suggest_reviewers"), false);
+    const showDeployRisk = toBool(core.getInput("deploy_risk"), false);
 
     const octokit = github.getOctokit(token);
     const { owner, repo, runId, prNumbers } = await getRunContext(octokit);
@@ -36754,6 +36781,9 @@ async function run() {
 
       appendStepSummary(`- Failing step: **${hit.stepName}**\n`);
       appendStepSummary(`- Detected type: **${hit.rule}**\n`);
+      if (showDeployRisk) {
+        appendStepSummary(`- Deploy risk: **${getDeployRisk(hit.rule)}**\n`);
+      }
       appendStepSummary(`- Source log: \`${hit.fileName}\`\n`);
       appendStepSummary(`- First error (normalized):${codeBlock(normalized)}\n`);
       appendStepSummary(`- Likely fix: ${primaryHint}\n`);
@@ -36811,9 +36841,11 @@ async function run() {
 
       appendStepSummary(`- Context:${codeBlock(excerpt)}\n`);
 
+      const riskLine = showDeployRisk ? `- Deploy risk: **${getDeployRisk(hit.rule)}**\n` : "";
       let partBlock =
         `- Failing step: **${hit.stepName}**\n` +
         `- Detected type: **${hit.rule}**\n` +
+        riskLine +
         `- First error:${codeBlock(normalized)}\n` +
         `- Likely fix: ${primaryHint}\n`;
       if (patternLink) {

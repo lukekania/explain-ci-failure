@@ -109,7 +109,6 @@ If no rule matches, the action falls back to a generic error detector.
 
 ## Possible Future Features
 
-- Deploy-risk correlation
 - Time-to-fix metrics per error type
 
 ## Why This Exists

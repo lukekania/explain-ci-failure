@@ -40,6 +40,10 @@ inputs:
     description: "Suggest reviewers based on recent commits to failing files"
     required: false
     default: "false"
+  deploy_risk:
+    description: "Show deploy-risk level based on failure type"
+    required: false
+    default: "false"
 outputs:
   failures_json:
     description: "JSON array of failure details (when json_output is enabled)"
