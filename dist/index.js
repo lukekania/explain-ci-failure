@@ -36260,6 +36260,29 @@ function pickFirstMeaningfulError(lines) {
     // Docker
     { name: "Docker", re: /(failed to solve|executor failed|ERROR: failed|docker buildx|#\d+ ERROR)/i },
 
+    // Python: pytest
+    { name: "pytest", re: /FAILED\s+\S+\.py/i },
+    { name: "pytest", re: /ERROR\s+\S+\.py/i },
+
+    // Python: mypy
+    { name: "mypy", re: /\.py:\d+: error:/i },
+
+    // Python: ruff/flake8
+    { name: "ruff/flake8", re: /\.py:\d+:\d+:\s+[A-Z]\d+/i },
+
+    // Python: pip
+    { name: "pip", re: /ERROR:.*pip/i },
+
+    // Go: test failures
+    { name: "Go", re: /--- FAIL:/i },
+
+    // Go: lint
+    { name: "Go", re: /\.go:\d+:\d+:/i },
+
+    // Go: build errors
+    { name: "Go", re: /cannot find package/i },
+    { name: "Go", re: /\bundefined:/i },
+
     // Generic JS runtime errors (keep late to avoid noise)
     { name: "Node", re: /\b(TypeError|ReferenceError|SyntaxError)\b/ },
     { name: "Node", re: /\bUnhandledPromiseRejection\b|\bUnhandled rejection\b/i }
@@ -36314,9 +36337,29 @@ function hintFor(ruleName) {
       "The first failing build step is the real cause; missing files and auth issues are common.",
       "Verify build context paths and base image tag availability."
     ],
+    pytest: [
+      "Run the failing test locally with `pytest -x` to stop at the first failure.",
+      "Check for fixture issues, missing mocks, or environment-dependent tests."
+    ],
+    mypy: [
+      "Fix the type annotation at the referenced file/line; mypy errors often cascade from a single root cause.",
+      "If it's a third-party library, check for missing type stubs (`types-*` packages)."
+    ],
+    "ruff/flake8": [
+      "Run `ruff check --fix` or `flake8` locally to see and auto-fix lint issues.",
+      "If the rule is intentionally violated, add a `# noqa: <code>` comment on the specific line."
+    ],
+    pip: [
+      "Check Python version compatibility and that all dependencies are available.",
+      "If it's a build dependency, ensure system packages (e.g., `libffi-dev`) are installed."
+    ],
+    Go: [
+      "Run `go test ./...` locally to reproduce the failure.",
+      "For build errors, check `go.mod` / `go.sum` and run `go mod tidy`."
+    ],
     Node: [
       "Find the first stack trace frame pointing to your code; earlier frames are often library internals.",
-      "If it’s an unhandled promise, ensure awaits/returns are correct and add proper error handling."
+      "If it's an unhandled promise, ensure awaits/returns are correct and add proper error handling."
     ],
     Generic: [
       "Start from the first error-looking line; later failures are often symptoms.",

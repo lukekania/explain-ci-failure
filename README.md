@@ -78,7 +78,7 @@ jobs:
 
 ## Supported Error Types
 
-Currently optimized for common frontend / Node.js CI stacks:
+Currently optimized for common CI stacks:
 - ESLint
 - TypeScript (tsc)
 - npm / pnpm / yarn
@@ -86,6 +86,8 @@ Currently optimized for common frontend / Node.js CI stacks:
 - Vite / Webpack builds
 - Docker build failures
 - Generic Node.js runtime errors
+- pytest / mypy / ruff / flake8 / pip (Python)
+- go test / golangci-lint / go build (Go)
 
 If no rule matches, the action falls back to a generic error detector.
 
@@ -113,7 +115,7 @@ If no rule matches, the action falls back to a generic error detector.
 - Reviewer suggestions based on failing files
 - Deploy-risk correlation
 - Time-to-fix metrics per error type
-- Support for additional stacks (Python, Go, Java)
+- Support for additional stacks (Java)
 
 ## Why This Exists
 
