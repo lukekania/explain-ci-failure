@@ -89,5 +89,5 @@ outputs:
   patterns_json:
     description: "JSON array of all tracked failure patterns (when export_json is enabled)"
 runs:
-  using: "node20"
+  using: "node22"
   main: "dist/index.js"
