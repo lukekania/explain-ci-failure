@@ -6,7 +6,7 @@
   "dependencies": {
     "@actions/core": "^3.0.0",
     "@actions/github": "^9.0.0",
-    "adm-zip": "^0.5.16"
+    "adm-zip": "^0.5.17"
   },
   "devDependencies": {
     "@vercel/ncc": "^0.38.4"
